@@ -23,8 +23,8 @@ fi
 
 cd $input_path
 
-7z x sample_submission.csv.7z
-7z x test.json.7z 
-7z x train.json.7z
+7z e sample_submission.csv.7z
+7z e test.json.7z
+7z e train.json.7z
 
 cd $current_path
