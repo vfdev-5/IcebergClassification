@@ -6,6 +6,7 @@ Note:
 - Methods of Transforms serialization/deserialization
 """
 
+import random
 import json
 import math
 
@@ -32,41 +33,42 @@ class Resize(object):
         return img
 
 
-class RandomApply(object):
+class RandomTransforms(object):
 
-    def __init__(self, transform, proba=0.5):
-        assert transform is not None and callable(transform)
-        self.transform = transform
-        self.proba = proba
-
-    def __call__(self, img):
-        if self.proba > np.random.rand():
-            return img
-        return self.transform(img)
-
-
-class RandomOrder(object):
-
-    def __init__(self, transforms):
+    def __init__(self, transforms, proba=0.5):
         assert transforms is not None
         self.transforms = transforms
+        self.proba = proba
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError()
+
+
+class RandomApply(RandomTransforms):
 
     def __call__(self, img):
-        order = np.random.permutation(len(self.transforms))
+        if self.proba < random.random():
+            return img
+        for t in self.transforms:
+            img = t(img)
+        return img
+
+
+class RandomOrder(RandomTransforms):
+
+    def __call__(self, img):
+        order = list(range(len(self.transforms)))
+        random.shuffle(order)
         for i in order:
             img = self.transforms[i](img)
         return img
 
 
-class RandomChoice(object):
-
-    def __init__(self, transforms):
-        assert transforms is not None
-        self.transforms = transforms
+class RandomChoice(RandomTransforms):
 
     def __call__(self, img):
-        c = np.random.choice(len(self.transforms), 1)[0]
-        return self.transforms[c](img)
+        t = random.choice(self.transforms)
+        return t(img)
 
 
 class RandomFlip(object):
@@ -77,7 +79,7 @@ class RandomFlip(object):
         self.proba = proba
 
     def __call__(self, img):
-        if self.proba > np.random.rand():
+        if self.proba < random.random():
             return img
         flipCode = 1 if self.mode == 'h' else 0
         return cv2.flip(img, flipCode)
@@ -130,21 +132,21 @@ class RandomAffine(object):
     def __call__(self, img):
 
         if self.scale is not None:
-            scale = np.random.uniform(self.scale[0], self.scale[1])
+            scale = random.uniform(self.scale[0], self.scale[1])
         else:
             scale = 1.0
 
         if self.translate is not None:
             max_dx = self.translate[0] * img.shape[1]
             max_dy = self.translate[1] * img.shape[0]
-            dx = np.round(np.random.uniform(-max_dx, max_dx))
-            dy = np.round(np.random.uniform(-max_dy, max_dy))
+            dx = np.round(random.uniform(-max_dx, max_dx))
+            dy = np.round(random.uniform(-max_dy, max_dy))
         else:
             dx = 0
             dy = 0
 
         if self.shear > 0.0:
-            shear = np.random.uniform(-self.shear, self.shear)
+            shear = random.uniform(-self.shear, self.shear)
             sin_shear = math.sin(math.radians(shear))
             cos_shear = math.cos(math.radians(shear))
         else:
@@ -152,7 +154,7 @@ class RandomAffine(object):
             cos_shear = 1.0
 
         center = (img.shape[1::-1] * np.array((0.5, 0.5))) - 0.5
-        deg = np.random.uniform(self.rotation[0], self.rotation[1])
+        deg = random.uniform(self.rotation[0], self.rotation[1])
 
         transform_matrix = cv2.getRotationMatrix2D(tuple(center), deg, scale)
 
@@ -191,10 +193,10 @@ class RandomAdd(object):
         self.value = value
 
     def __call__(self, img):
-        if self.proba > np.random.rand():
+        if self.proba < random.random():
             return img
         out = img.copy()
-        value = np.random.randint(self.value[0], self.value[1])
+        value = random.randint(self.value[0], self.value[1])
         if self.per_channel is not None and \
                         self.per_channel in list(range(img.shape[-1])):
             out[:, :, self.per_channel] = np.clip(out[:, :, self.per_channel] + value, 0, 255)
@@ -229,8 +231,8 @@ class RandomCrop(Crop):
         th, tw = output_size
         if w == tw and h == th:
             return 0, 0, h, w
-        i = np.random.randint(0, h - th)
-        j = np.random.randint(0, w - tw)
+        i = random.randint(0, h - th)
+        j = random.randint(0, w - tw)
         return i, j, th, tw
 
 
@@ -293,7 +295,7 @@ class AlphaLerp(object):
             self.max_val = var
 
     def get_alpha(self):
-        return np.random.uniform(self.min_val, self.max_val)
+        return random.uniform(self.min_val, self.max_val)
 
     def get_end_image(self, img):
         raise NotImplementedError

@@ -7,7 +7,7 @@ import torch
 from .torch_common_utils.dataflow_visu_utils import _to_ndarray, _to_str, scale_percentile
 
 
-def display_image(ax, img, id_num, band_id, inc_angle, target=None):
+def display_image(ax, img, id_num, band_id, inc_angle, target=None, **kwargs):
 
     if img.shape[2] == 2:
         img3b = np.zeros(img.shape[:2] + (3, ), dtype=img.dtype)
@@ -15,11 +15,12 @@ def display_image(ax, img, id_num, band_id, inc_angle, target=None):
         img3b[:, :, 1] = img[:, :, 1]
         img = img3b
 
-    ax.imshow(scale_percentile(img, q_min=0.0, q_max=100.0))
+    im = ax.imshow(scale_percentile(img, q_min=0.0, q_max=100.0), **kwargs)
     ax.text(10, 4, '%s %s %.5f' % (id_num, band_id, inc_angle), color='w', backgroundcolor='m', alpha=0.7)
     if target is not None:
         ax.text(10, 14, 'y={}'.format(target), color='k', backgroundcolor='w', alpha=0.7)
     ax.axis('on')
+    return im
 
 
 def display_dataset(ds, max_datapoints=15, n_cols=5, figsize=(12, 6), show_info=False):
@@ -33,7 +34,7 @@ def display_dataset(ds, max_datapoints=15, n_cols=5, figsize=(12, 6), show_info=
             shape = x.size() if torch.is_tensor(x) else x.shape
             print("x: ", type(x), shape, x[:, :, 0].min(), x[:, :, 0].max(),
                   x[:, :, 1].min(), x[:, :, 1].max())
-            shape = y.size() if torch.is_tensor(y) else y.shape
+            shape = y.size() if torch.is_tensor(y) else y.shape if isinstance(y, np.ndarray) else len(y)
             print("y: ", type(y), shape)
 
         x = _to_ndarray(x)
@@ -84,7 +85,7 @@ def display_batches(batches_ds, max_batches=3, n_cols=5, figsize=(16, 6), suptit
                 plt.figure(figsize=figsize)
 
             x = batch_x[j, ...]
-            y = batch_y[j, ...]
+            y = batch_y[j, ...] if isinstance(batch_y, np.ndarray) else batch_y[j]
 
             x = _to_ndarray(x)
             y = _to_str(y)

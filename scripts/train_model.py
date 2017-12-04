@@ -3,7 +3,6 @@
 import os
 import sys
 import argparse
-import json
 from datetime import datetime
 
 root_path = os.path.abspath("..")
@@ -14,6 +13,7 @@ from torch.nn import CrossEntropyLoss
 from torch.nn.functional import softmax
 from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
 
+from common import read_config, to_readable_str
 from common.dataflow import get_trainval_batches
 from common.models import *
 from common.torch_common_utils.deserialization import restore_object, CustomObjectEval
@@ -30,23 +30,10 @@ def accuracy_logits(y_logits, y_true):
     return accuracy(y_pred, y_true)
 
 
-def read_config(filepath):
-    with open(filepath, 'r') as handler:
-        config = json.load(handler)
-    return config
-
-
-def to_readable_str(config):
-    config_str = ""
-    for k, v in config.items():
-        config_str += "{}: {}\n".format(k, v)
-    return config_str
-
-
 def train(model, criterion, optimizer, batches, lr_schedulers, early_stopping, logs_path, config):
 
     train_batches, val_batches = batches
-    best_acc = 0
+    
     config_str = ""
     for k, v in config.items():
         config_str += "{}: {}\n".format(k, v)
@@ -56,7 +43,17 @@ def train(model, criterion, optimizer, batches, lr_schedulers, early_stopping, l
 
     write_csv_log(logs_path, "epoch,train_loss,train_acc,val_loss,val_acc")
 
+    mode = "min"
+    best_val_loss = 10e5 if mode == "min" else 0
+    if mode == "min":
+        comp_fn = lambda current, best: current < best
+    else:
+        comp_fn = lambda current, best: current > best
+
     for epoch in range(0, config['n_epochs']):
+
+        if epoch > 0 and epoch % 10 == 0:
+            print(optimizer_to_str(optimizer))
 
         for scheduler in lr_schedulers:
             if isinstance(scheduler, _LRScheduler):
@@ -65,14 +62,14 @@ def train(model, criterion, optimizer, batches, lr_schedulers, early_stopping, l
         # train for one epoch
         ret = train_one_epoch(model, train_batches, criterion, optimizer, epoch,
                               config['n_epochs'],
-                              avg_metrics=[accuracy_logits, ])
+                              avg_metrics=[accuracy_logits])
         if ret is None:
             return False
         train_loss, train_acc = ret
 
         # evaluate on validation set
-        if epoch % config['validate_every_epoch'] == 0:
-            ret = validate(model, val_batches, criterion, avg_metrics=[accuracy_logits, ])
+        if (epoch + 1) % config['validate_every_epoch'] == 0:
+            ret = validate(model, val_batches, criterion, avg_metrics=[accuracy_logits])
             if ret is None:
                 return False
             val_loss, val_acc = ret
@@ -81,18 +78,18 @@ def train(model, criterion, optimizer, batches, lr_schedulers, early_stopping, l
 
             for scheduler in lr_schedulers:
                 if isinstance(scheduler, ReduceLROnPlateau):
-                    scheduler.step(val_acc)
+                    scheduler.step(val_loss)
 
-            if early_stopping(val_acc):
+            if early_stopping(val_loss):
                 break
 
-            # remember best accuracy and save checkpoint
-            if val_acc > best_acc:
-                best_acc = max(val_acc, best_acc)
-                save_checkpoint(logs_path, 'val_acc', {
+            # remember best logloss and save checkpoint
+            if comp_fn(val_loss, best_val_loss):
+                best_val_loss = val_loss
+                save_checkpoint(logs_path, 'val_loss', {
                     'epoch': epoch + 1,
                     'state_dict': model.state_dict(),
-                    'val_acc': val_acc,
+                    'val_loss': val_loss,
                     'optimizer': optimizer.state_dict()})
     return True
 
@@ -112,7 +109,7 @@ if __name__ == "__main__":
 
     now = datetime.now()
     output_path = os.path.abspath(os.path.join("..", "output",
-                                               "logs_%s_%s" % (model_name, now.strftime("%Y%m%d_%H%M"))))
+                                               "training_%s_%s" % (model_name, now.strftime("%Y%m%d_%H%M"))))
 
     fold_indices = config['fold_index']
     if not isinstance(fold_indices, (tuple, list)):
@@ -142,7 +139,7 @@ if __name__ == "__main__":
         if not isinstance(lr_schedulers_conf, (tuple, list)):
             lr_schedulers_conf = [lr_schedulers_conf]
 
-        for s in lr_schedulers:
+        for s in lr_schedulers_conf:
             scheduler = restore_object(s, params_to_insert=params_to_insert,
                                        custom_objects=custom_objects,
                                        verbose_debug=False)

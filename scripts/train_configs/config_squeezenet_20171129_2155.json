@@ -14,10 +14,10 @@
 
   "lr_schedulers": [
       {"ExponentialLR": {"gamma": 0.77 } },
-      {"ReduceLROnPlateau": {"factor": 0.2, "mode": "max",  "patience": 3, "verbose": "True"}}
+      {"ReduceLROnPlateau": {"factor": 0.2, "mode": "min",  "patience": 3, "verbose": "True"}}
   ],
 
-  "early_stopping": {"patience": 7, "mode": "max"},
+  "early_stopping": {"patience": 7, "mode": "min"},
 
   "train_aug": {
     "Compose": {

@@ -15,7 +15,7 @@ import torch
 from .image_utils import scale_percentile
 
 
-def display_basic_dataset(ds, max_datapoints=15, n_cols=5, figsize=(12, 6), ):
+def display_basic_dataset(ds, max_datapoints=15, n_cols=5, figsize=(12, 6)):
     """
     Method to display datapoints from dataset
     Datapoint is (x, y) and y should be integer
