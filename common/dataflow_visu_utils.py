@@ -9,13 +9,18 @@ from .torch_common_utils.dataflow_visu_utils import _to_ndarray, _to_str, scale_
 
 def display_image(ax, img, id_num, band_id, inc_angle, target=None, **kwargs):
 
-    if img.shape[2] == 2:
+    if len(img.shape) == 3 and img.shape[2] == 2:
         img3b = np.zeros(img.shape[:2] + (3, ), dtype=img.dtype)
         img3b[:, :, 0] = img[:, :, 0]
         img3b[:, :, 1] = img[:, :, 1]
-        img = img3b
+        img = scale_percentile(img3b, q_min=0.0, q_max=100.0)
+    elif len(img.shape) == 3 and img.shape[2] > 3:
+        imgNb = np.zeros((img.shape[0], img.shape[1] * img.shape[2]), dtype=img.dtype)
+        for i in range(img.shape[2]):
+            imgNb[:, i*img.shape[1]:(i+1)*img.shape[1]] = scale_percentile(img[:, :, i], q_min=0.0, q_max=100.0)
+        img = imgNb
 
-    im = ax.imshow(scale_percentile(img, q_min=0.0, q_max=100.0), **kwargs)
+    im = ax.imshow(img, **kwargs)
     ax.text(10, 4, '%s %s %.5f' % (id_num, band_id, inc_angle), color='w', backgroundcolor='m', alpha=0.7)
     if target is not None:
         ax.text(10, 14, 'y={}'.format(target), color='k', backgroundcolor='w', alpha=0.7)
@@ -34,7 +39,13 @@ def display_dataset(ds, max_datapoints=15, n_cols=5, figsize=(12, 6), show_info=
             shape = x.size() if torch.is_tensor(x) else x.shape
             print("x: ", type(x), shape, x[:, :, 0].min(), x[:, :, 0].max(),
                   x[:, :, 1].min(), x[:, :, 1].max())
-            shape = y.size() if torch.is_tensor(y) else y.shape if isinstance(y, np.ndarray) else len(y)
+
+            if torch.is_tensor(y):
+                shape = y.size()
+            elif isinstance(y, np.ndarray):
+                shape = y.shape
+            else:
+                shape = 1
             print("y: ", type(y), shape)
 
         x = _to_ndarray(x)

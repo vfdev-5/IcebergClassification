@@ -48,14 +48,16 @@ def train_one_epoch(model, train_batches, criterion, optimizer, epoch, n_epochs,
 
                 prefix_str = "Epoch: {}/{}".format(epoch + 1, n_epochs)
                 pbar.set_description_str(prefix_str, refresh=False)
-                post_fix_str = "Loss {loss.avg:.4f}".format(loss=average_meters[0])
+                post_fix_str = "Loss: {loss.avg:.4f}".format(loss=average_meters[0])
 
                 # measure metrics
                 if avg_metrics is not None:
-                    for _fn, av_meter in zip(avg_metrics, average_meters[1:]):
-                        v = _fn(batch_y_pred.data, batch_y.data)
+                    for j, (_fn, av_meter) in enumerate(zip(avg_metrics, average_meters[1:])):
+                        v = _fn(batch_y_pred, batch_y)
                         av_meter.update(v, batch_size)
-                        post_fix_str += " | {name} {avg:.3f}".format(name=_fn.__name__, avg=av_meter.avg)
+                        fn_name = _fn.__name__ if hasattr(_fn, "__name__") else \
+                            _fn.func.__name__ if hasattr(_fn, "func") else "metric %i" % j
+                        post_fix_str += " | {name}: {avg:.3f}".format(name=fn_name, avg=av_meter.avg)
 
                 pbar.set_postfix_str(post_fix_str, refresh=False)
                 pbar.update(1)
@@ -106,37 +108,39 @@ def validate(model, val_batches, criterion, avg_metrics=None, full_data_metrics=
                 loss = criterion(batch_y_pred, batch_y)
                 average_meters[0].update(loss.data[0], batch_size)
 
-                if full_data_metrics is not None:
-                    _batch_y = batch_y.data
-                    if _batch_y.cuda:
-                        _batch_y = _batch_y.cpu()
-                    y_true_full.append(_batch_y.numpy())
-                    _batch_y_pred = batch_y_pred.data
-                    if _batch_y_pred.cuda:
-                        _batch_y_pred = batch_y_pred.cpu()
-                    y_pred_full.append(_batch_y_pred.numpy())
+                # if full_data_metrics is not None:
+                #     _batch_y = batch_y.data
+                #     if _batch_y.cuda:
+                #         _batch_y = _batch_y.cpu()
+                #     y_true_full.append(_batch_y.numpy())
+                #     _batch_y_pred = batch_y_pred.data
+                #     if _batch_y_pred.cuda:
+                #         _batch_y_pred = batch_y_pred.cpu()
+                #     y_pred_full.append(_batch_y_pred.numpy())
 
                 # measure average metrics
                 prefix_str = "Validation: "
                 pbar.set_description_str(prefix_str, refresh=False)
-                post_fix_str = "Loss {loss.avg:.4f}".format(loss=average_meters[0])
+                post_fix_str = "Loss: {loss.avg:.4f}".format(loss=average_meters[0])
                 # measure metrics
                 if avg_metrics is not None:
-                    for _fn, av_meter in zip(avg_metrics, average_meters[1:]):
-                        v = _fn(batch_y_pred.data, batch_y.data)
+                    for j, (_fn, av_meter) in enumerate(zip(avg_metrics, average_meters[1:])):
+                        v = _fn(batch_y_pred, batch_y)
                         av_meter.update(v, batch_size)
-                        post_fix_str += " | {name} {av_meter.avg:.3f}".format(name=_fn.__name__, av_meter=av_meter)
+                        fn_name = _fn.__name__ if hasattr(_fn, "__name__") else \
+                            _fn.func.__name__ if hasattr(_fn, "func") else "metric %i" % j
+                        post_fix_str += " | {name}: {av_meter.avg:.3f}".format(name=fn_name, av_meter=av_meter)
 
                 pbar.set_postfix_str(post_fix_str, refresh=False)
                 pbar.update(1)
 
-            if full_data_metrics is not None:
-                res = []
-                for _fn in full_data_metrics:
-                    res.append(_fn(y_true_full, y_pred_full))
-                return [m.avg for m in average_meters], res
-            else:
-                return [m.avg for m in average_meters]
+            # if full_data_metrics is not None:
+            #     res = []
+            #     for _fn in full_data_metrics:
+            #         res.append(_fn(y_true_full, y_pred_full))
+            #     return [m.avg for m in average_meters], res
+            # else:
+            return [m.avg for m in average_meters]
     except KeyboardInterrupt:
         return None
 

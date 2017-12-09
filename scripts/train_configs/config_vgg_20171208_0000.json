@@ -1,0 +1,63 @@
+{
+  "seed": 7777,
+
+  "model": {"IcebergVGG16": {"input_n_channels": 5}},
+
+  "n_epochs": 300,
+  "validate_every_epoch": 2,
+
+  "fold_index": [0, 1, 2, 3, 4, 5, 6],
+  "n_splits": 7,
+
+  "batch_size": 32,
+  "num_workers": 12,
+
+  "lr_schedulers": [
+      {"MultiStepLR": {"gamma": 0.2, "milestones": [25, 50, 70, 90, 120, 150, 200]} }
+  ],
+
+  "early_stopping": {"patience": 50, "mode": "min"},
+
+  "train_aug": {
+    "Compose": {
+      "transforms": [
+        {"ToFiveBands": {}},
+        {"RandomApply": {"proba": 0.5,
+          "transforms": [
+            {"RandomAffine": {
+              "translate": [0.15, 0.15],
+              "rotation": [-45, 45],
+              "interpolation": 0}},
+            {"RandomFlip": {"mode": "h", "proba": 0.75}},
+            {"RandomFlip": {"mode": "v", "proba": 0.75}}
+          ]}
+        },
+        {"_ToTensor": {}},
+        {"Normalize": {"mean": [-25.0, -25.0, -25.0, -25.0, 800], "std": [50, 50, 50, 50, 2500]}}
+      ]}
+  },
+
+  "test_aug": {
+    "Compose": {
+      "transforms": [
+        {"ToFiveBands": {}},
+        {"RandomFlip": {"mode": "h", "proba": 0.5}},
+        {"RandomFlip": {"mode": "v", "proba": 0.5}},
+        {"_ToTensor": {}},
+        {"Normalize": {"mean": [-25.0, -25.0, -25.0, -25.0, 800], "std": [50, 50, 50, 50, 2500]}}
+      ]}
+  },
+
+  "optimizer": {
+    "SGD": {
+      "params": [{
+        "params": {
+          "model.parameters": {}},
+          "lr": 0.0001,
+          "momentum": 0.9,
+          "weight_decay": 0.0001,
+          "nesterov": "True"}
+      ]
+    }
+  }
+}

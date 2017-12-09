@@ -1,0 +1,3 @@
+[submodule "CLR"]
+	path = CLR
+	url = https://github.com/bckenstler/CLR

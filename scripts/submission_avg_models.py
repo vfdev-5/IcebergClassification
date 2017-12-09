@@ -20,6 +20,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Write submission as average proba of multiple models predictions")
     parser.add_argument('path', metavar='<path>', help="Path to npz files with predictions")
+    parser.add_argument('--proba_thresholds', type=int, nargs=2, help="Probability min/max thresholds, e.g 0.03 0.97")
     args = parser.parse_args()
     output_path = args.path
 
@@ -28,6 +29,11 @@ if __name__ == "__main__":
     filenames = glob(os.path.join(output_path, "*.npz"))
     assert len(filenames) > 0, "No npz predictions at '%s'" % output_path
 
+    proba_thresholds=args.proba_thresholds
+    if proba_thresholds is not None:
+        assert isinstance(proba_thresholds, (tuple, list)) and len(proba_thresholds) == 2
+        print("Apply proba_thresholds={}".format(proba_thresholds))
+    
     y_probas_list = []
     data_ids_list = []
     for f in filenames:

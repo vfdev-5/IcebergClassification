@@ -9,12 +9,12 @@ root_path = os.path.abspath("..")
 if root_path not in sys.path:
     sys.path.append(root_path)
 
-from torch.nn import CrossEntropyLoss
-from torch.nn.functional import softmax
+from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss
+from torch.nn.functional import softmax, sigmoid
 from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
 
 from common import read_config, to_readable_str
-from common.dataflow import get_trainval_batches
+from common.dataflow import *
 from common.models import *
 from common.torch_common_utils.deserialization import restore_object, CustomObjectEval
 
@@ -25,15 +25,15 @@ from common.torch_common_utils.training_utils import EarlyStopping
 from common.torch_common_utils.training_utils import accuracy
 
 
-def accuracy_logits(y_logits, y_true):
-    y_pred = softmax(y_logits).data
+def accuracy_logits(y_logits, y_true, to_proba_fn=softmax):
+    y_pred = to_proba_fn(y_logits).data
     return accuracy(y_pred, y_true)
 
 
 def train(model, criterion, optimizer, batches, lr_schedulers, early_stopping, logs_path, config):
 
     train_batches, val_batches = batches
-    
+
     config_str = ""
     for k, v in config.items():
         config_str += "{}: {}\n".format(k, v)
@@ -50,6 +50,11 @@ def train(model, criterion, optimizer, batches, lr_schedulers, early_stopping, l
     else:
         comp_fn = lambda current, best: current > best
 
+    if "to_proba_fn" in config:
+        to_proba_fn = eval(config["to_proba_fn"], globals())
+    else:
+        to_proba_fn = partial(softmax, dim=1)
+
     for epoch in range(0, config['n_epochs']):
 
         if epoch > 0 and epoch % 10 == 0:
@@ -62,14 +67,15 @@ def train(model, criterion, optimizer, batches, lr_schedulers, early_stopping, l
         # train for one epoch
         ret = train_one_epoch(model, train_batches, criterion, optimizer, epoch,
                               config['n_epochs'],
-                              avg_metrics=[accuracy_logits])
+                              avg_metrics=[partial(accuracy_logits, to_proba_fn=to_proba_fn)])
         if ret is None:
             return False
         train_loss, train_acc = ret
 
         # evaluate on validation set
         if (epoch + 1) % config['validate_every_epoch'] == 0:
-            ret = validate(model, val_batches, criterion, avg_metrics=[accuracy_logits])
+            ret = validate(model, val_batches, criterion,
+                           avg_metrics=[partial(accuracy_logits, to_proba_fn=to_proba_fn)])
             if ret is None:
                 return False
             val_loss, val_acc = ret
@@ -115,6 +121,11 @@ if __name__ == "__main__":
     if not isinstance(fold_indices, (tuple, list)):
         fold_indices = [fold_indices]
 
+    if "get_trainval_batches_fn" in config:
+        get_trainval_batches_fn = eval(config["get_trainval_batches_fn"], globals())
+    else:
+        get_trainval_batches_fn = get_trainval_batches
+
     for fold_index in fold_indices:
         print("\n\n -------- Train on fold %i / %i ---------- \n\n" % (fold_index + 1, len(fold_indices)))
         print(to_readable_str(config))
@@ -126,13 +137,16 @@ if __name__ == "__main__":
         model = model.cuda()
 
         # Setup optimizer
-        custom_objects = CustomObjectEval(globals=globals())
+        # Put model into custom_objects
+        model in custom_objects
         optimizer = restore_object(config['optimizer'], custom_objects=custom_objects, verbose_debug=False)
         print(optimizer_to_str(optimizer))
 
+        criterion = restore_object(config['criterion'], custom_objects=custom_objects, verbose_debug=False)
+        criterion = criterion.cuda()
+
         params_to_insert = {'optimizer': '_opt'}
         custom_objects = {"_opt": optimizer}
-
         lr_schedulers_conf = config['lr_schedulers']
 
         lr_schedulers = []
@@ -149,14 +163,13 @@ if __name__ == "__main__":
         if 'early_stopping' in config:
             early_stopping = EarlyStopping(**config['early_stopping'])
 
-        criterion = CrossEntropyLoss().cuda()
-        train_batches, val_batches = get_trainval_batches(config['train_aug'],
-                                                          config['test_aug'],
-                                                          n_splits=config['n_splits'],
-                                                          fold_index=fold_index,
-                                                          batch_size=config['batch_size'],
-                                                          num_workers=config['num_workers'],
-                                                          seed=config['seed'])
+        train_batches, val_batches = get_trainval_batches_fn(config['train_aug'],
+                                                             config['test_aug'],
+                                                             n_splits=config['n_splits'],
+                                                             fold_index=fold_index,
+                                                             batch_size=config['batch_size'],
+                                                             num_workers=config['num_workers'],
+                                                             seed=config['seed'])
 
         logs_path = os.path.join(output_path, "fold_%i" % fold_index)
         if not os.path.exists(logs_path):
