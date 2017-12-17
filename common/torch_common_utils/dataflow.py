@@ -94,6 +94,32 @@ class TransformedDataset(ProxyDataset):
         return x, y
 
 
+class ResampledDataset(ProxyDataset):
+
+    def __init__(self, ds, n, x_transforms, y_transforms=None):
+        super(ResampledDataset, self).__init__(ds)
+        assert callable(x_transforms)
+        if y_transforms is not None:
+            assert callable(y_transforms)
+        self.ds = ds
+        self.n = n
+        self.x_transforms = x_transforms
+        self.y_transforms = y_transforms
+
+    def __len__(self):
+        return len(self.ds) * self.n
+
+    def __getitem__(self, index):
+        i = int(index / self.n)
+        j = index % self.n
+        x, y = self.ds[i]
+        if j > 0:
+            x = self.x_transforms(x)
+            if self.y_transforms is not None:
+                y = self.y_transforms(y)
+        return x, y
+
+
 def to_cuda(batch):
     if torch.is_tensor(batch):
         return batch.cuda(async=True)
@@ -138,7 +164,7 @@ class PrintLabelsStats:
         total: | '0': 20 | '1': 16 | '2': 22 | '3': 19 | '4': 16 | '5': 15 | '6': 22 | '7': 14 | '8': 18 | '9': 14 | 
     
     """
-    
+
     def __init__(self, ds, display_freq=1, display_total=True):
         assert isinstance(ds, DataLoader)
         assert display_freq > 0, "display_freq should be a positive integer"
@@ -147,22 +173,22 @@ class PrintLabelsStats:
         self.cnt = 0
         self.display_freq = display_freq
         self.display_total = display_total
-    
+
     def __len__(self):
         return len(self.ds)
-    
-    def __getitem__(self):        
+
+    def __getitem__(self):
         iterator = self.ds.__iter__()
         batch_x, batch_y = next(iterator)
         y_stats = defaultdict(int)
         for dp in batch_y:
             if isinstance(dp, Hashable):
-                self.total_y_stats[dp] += 1 
+                self.total_y_stats[dp] += 1
                 y_stats[dp] += 1
-                    
+
         if (self.cnt % self.display_freq) == 0:
             print("%i | Labels counts: " % self.cnt)
-                                
+
             print("  current: | ", end='')
             for k in y_stats:
                 print("'{}': {} |".format(str(k), y_stats[k]), end=' ')
@@ -171,6 +197,6 @@ class PrintLabelsStats:
                 print("    total: | ", end='')
                 for k in self.total_y_stats:
                     print("'{}': {} |".format(str(k), self.total_y_stats[k]), end=' ')
-                print('')                    
+                print('')
         self.cnt += 1
         return iterator

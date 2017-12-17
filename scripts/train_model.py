@@ -23,6 +23,7 @@ from common.torch_common_utils.training_utils import write_conf_log, write_csv_l
     save_checkpoint, optimizer_to_str
 from common.torch_common_utils.training_utils import EarlyStopping
 from common.torch_common_utils.training_utils import accuracy
+from common.torch_common_utils.nn_utils import print_trainable_parameters
 
 
 def accuracy_logits(y_logits, y_true, to_proba_fn=softmax):
@@ -111,11 +112,11 @@ if __name__ == "__main__":
 
     config = read_config(config_filepath)
 
-    model_name = list(config['model'].keys())[0]
-
     now = datetime.now()
+    config_filename = os.path.basename(config_filepath)
+    config_filename = config_filename.replace(".json", "")
     output_path = os.path.abspath(os.path.join("..", "output",
-                                               "training_%s_%s" % (model_name, now.strftime("%Y%m%d_%H%M"))))
+                                               "%s_training_%s" % (now.strftime("%Y%m%d_%H%M"), config_filename)))
 
     fold_indices = config['fold_index']
     if not isinstance(fold_indices, (tuple, list)):
@@ -126,6 +127,9 @@ if __name__ == "__main__":
     else:
         get_trainval_batches_fn = get_trainval_batches
 
+    torch.manual_seed(config['seed'])
+    torch.cuda.manual_seed(config['seed'])
+
     for fold_index in fold_indices:
         print("\n\n -------- Train on fold %i / %i ---------- \n\n" % (fold_index + 1, len(fold_indices)))
         print(to_readable_str(config))
@@ -135,6 +139,8 @@ if __name__ == "__main__":
         custom_objects = CustomObjectEval(globals=globals())
         model = restore_object(config['model'], custom_objects=custom_objects, verbose_debug=False)
         model = model.cuda()
+
+        print_trainable_parameters(model)
 
         # Setup optimizer
         # Put model into custom_objects

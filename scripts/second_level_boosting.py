@@ -25,6 +25,20 @@ if __name__ == "__main__":
 
     config = read_config(config_filepath)
 
+    # N * K trained models, N different CNNs trained on K identical folds
+    #
+    # For a fold:
+    # - we have train/validation datasets
+    # - make N predictions on train/validation datasets
+    # - concatenate N predictions from train dataset
+    # - concatenate N predictions from validation dataset
+    # - train gb trees on train dataset
+    # - compute logloss on validation dataset
+    #
+    # Compute mean logloss on all folds
+    #
+
+
 
 
 

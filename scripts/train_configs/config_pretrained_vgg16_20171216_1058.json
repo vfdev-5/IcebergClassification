@@ -1,0 +1,66 @@
+{
+  "seed": 2017,
+
+  "model": {"IcebergPretrainedVGG16WithAngleAndStats2": {
+    "input_n_channels": 3, "n_classes": 1, "n_class_features": 2048}
+  },
+
+  "criterion": {"BCEWithLogitsLoss": {}},
+  "get_trainval_batches_fn": "get_trainval_batches_with_metadata",
+  "to_proba_fn": "torch.nn.functional.sigmoid",
+
+  "n_epochs": 1000,
+  "validate_every_epoch": 2,
+
+  "fold_index": [0, 1, 2, 3, 4],
+  "n_splits": 5,
+
+  "batch_size": 32,
+  "num_workers": 12,
+
+  "lr_schedulers": [
+      {"ExponentialLR": {"gamma": 0.999 } },
+      {"ReduceLROnPlateau": {"factor": 0.1, "mode": "min",  "patience": 10, "verbose": "True"}}
+  ],
+
+  "early_stopping": {"patience": 100, "mode": "min"},
+
+  "train_aug": {
+    "Compose": {
+      "transforms": [
+        {"ToThreeBands": {}},
+        {"RandomAffine": {
+          "translate": [0.2, 0.2],
+          "rotation": [-90, 90],
+          "scale": [0.90, 1.10],
+          "interpolation": 2}},
+        {"RandomFlip": {"mode": "h", "proba": 0.5}},
+        {"RandomFlip": {"mode": "v", "proba": 0.5}},
+        {"_ToTensor": {}},
+        {"_Normalize": {}}
+      ]}
+  },
+
+  "test_aug": {
+    "Compose": {
+      "transforms": [
+        {"ToThreeBands": {}},
+        {"RandomFlip": {"mode": "h", "proba": 0.5}},
+        {"RandomFlip": {"mode": "v", "proba": 0.5}},
+        {"_ToTensor": {}},
+        {"_Normalize": {}}
+      ]}
+  },
+
+  "optimizer": {
+    "Adam": {
+      "params": [
+        {"params": {"model.features.parameters": {}},          "lr": 0.000001234},
+        {"params": {"model.metadata_features.parameters": {}}, "lr": 0.0000099},
+        {"params": {"model.classifier.parameters": {}},        "lr": 0.0000111}
+
+      ]
+    }
+  }
+
+}

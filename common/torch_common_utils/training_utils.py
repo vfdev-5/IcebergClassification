@@ -42,6 +42,7 @@ def train_one_epoch(model, train_batches, criterion, optimizer, epoch, n_epochs,
                 batch_y = Variable(batch_y)
 
                 # compute output and measure loss
+                batch_x = [batch_x] if not isinstance(batch_x, (tuple, list)) else batch_x
                 batch_y_pred = model(*batch_x)
                 loss = criterion(batch_y_pred, batch_y)
                 average_meters[0].update(loss.data[0], batch_size)
@@ -104,6 +105,7 @@ def validate(model, val_batches, criterion, avg_metrics=None, full_data_metrics=
                 batch_y = Variable(batch_y, volatile=True)
 
                 # compute output and measure loss
+                batch_x = [batch_x] if not isinstance(batch_x, (tuple, list)) else batch_x
                 batch_y_pred = model(*batch_x)
                 loss = criterion(batch_y_pred, batch_y)
                 average_meters[0].update(loss.data[0], batch_size)

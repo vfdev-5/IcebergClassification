@@ -31,7 +31,8 @@
         {"RandomAffine": {
           "translate": [0.15, 0.15],
           "rotation": [-5, 5],
-          "interpolation": 0}},
+          "scale": [0.75, 1.20],
+          "interpolation": 1}},
         {"RandomFlip": {"mode": "h", "proba": 0.5}},
         {"RandomFlip": {"mode": "v", "proba": 0.5}},
         {"_ToTensor": {}},

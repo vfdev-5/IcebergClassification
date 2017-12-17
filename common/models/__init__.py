@@ -11,5 +11,6 @@ from .densenet import *
 from .inceptionv4 import *
 from .squeezenet import *
 from .vgg import *
+from .resnet import *
 
 

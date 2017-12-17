@@ -13,11 +13,26 @@ assert 'PRETRAINED_MODELS' in os.environ
 sys.path.append(os.environ['PRETRAINED_MODELS'])
 
 from torch.nn.init import xavier_normal, kaiming_normal
-from torch.nn import Conv2d, BatchNorm2d, Linear
+from torch.nn import Conv2d, BatchNorm2d, Linear, Dropout
 from torch.nn import ReLU
 
 from pretrainedmodels.inceptionv4 import Inception_A, Inception_B, Reduction_A, Reduction_B, Inception_C, BasicConv2d
+
 from . import Flatten
+
+
+def initialize_weights(modules):
+    for m in modules:
+        if isinstance(m, Conv2d):
+            kaiming_normal(m.weight)
+            if m.bias is not None:
+                m.bias.data.zero_()
+        elif isinstance(m, BatchNorm2d):
+            m.weight.data.fill_(1)
+            m.bias.data.zero_()
+        elif isinstance(m, Linear):
+            xavier_normal(m.weight)
+            m.bias.data.zero_()
 
 
 class _Mixed_3a(Module):
@@ -71,9 +86,32 @@ class _Mixed_5a(Module):
         return out
 
 
+def get_features():
+    return Sequential(
+        Inception_A(),
+        Inception_A(),
+        Inception_A(),
+        Inception_A(),
+        Reduction_A(),  # Mixed_6a
+        Inception_B(),
+        Inception_B(),
+        Inception_B(),
+        Inception_B(),
+        Inception_B(),
+        Inception_B(),
+        Inception_B(),
+        Reduction_B(),  # Mixed_7a
+        Inception_C(),
+        Inception_C(),
+        Inception_C(),
+        AdaptiveAvgPool2d(1),
+        Flatten()
+    )
+
+
 class IcebergInceptionV4(Module):
 
-    def __init__(self, input_n_channels):
+    def __init__(self, input_n_channels, n_classes=2):
         super(IcebergInceptionV4, self).__init__()
 
         # Specific stem
@@ -87,87 +125,18 @@ class IcebergInceptionV4(Module):
         )
 
         # input channels : 384
-        self.features = Sequential(
-            Inception_A(),
-            Inception_A(),
-            Inception_A(),
-            Inception_A(),
-            Reduction_A(),  # Mixed_6a
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Reduction_B(),  # Mixed_7a
-            Inception_C(),
-            Inception_C(),
-            Inception_C(),
-            AdaptiveAvgPool2d(1),
-            Flatten()
-        )
+        self.features = get_features()
 
         # Linear layer
-        self.classifier = Linear(1536, 2)
+        self.classifier = Linear(1536, n_classes)
+
+    def _initialize_weights(self):
+        initialize_weights(self.modules())
 
     def forward(self, x, a):
         x = self.stem(x)
         x = self.features(x)
         y = self.classifier(x)
-        return y
-    
-    
-class IcebergInceptionV5(Module):
-
-    def __init__(self, input_n_channels, n_features=5):
-        super(IcebergInceptionV5, self).__init__()
-
-        # Specific stem
-        self.stem = Sequential(
-            BasicConv2d(input_n_channels, 32, kernel_size=3, stride=1, padding=1),
-            BasicConv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            BasicConv2d(64, 64, kernel_size=3, stride=1, padding=1),
-            BasicConv2d(64, 256, kernel_size=1, stride=1),
-            BasicConv2d(256, 256, kernel_size=3, stride=1),
-            BasicConv2d(256, 384, kernel_size=3, stride=2, padding=1),
-        )
-
-        # input channels : 384
-        self.features = Sequential(
-            Inception_A(),
-            Inception_A(),
-            Inception_A(),
-            Inception_A(),
-            Reduction_A(),  # Mixed_6a
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Reduction_B(),  # Mixed_7a
-            Inception_C(),
-            Inception_C(),
-            Inception_C(),
-            AdaptiveAvgPool2d(1),
-            Flatten()
-        )
-
-        # Linear layer
-        self.classifier = Linear(1536, n_features)
-        # Final classification layer
-        self.final_classifier = Linear(n_features + 1, 2)
-
-    def forward(self, x, a):
-        x = self.stem(x)
-        f0 = self.features(x)
-        f1 = self.classifier(f0)
-        if len(a.size()) == 1:
-            a = a.unsqueeze(dim=1)
-        f = torch.cat((f1, a), dim=1)
-        y = self.final_classifier(f)
         return y
 
 
@@ -187,27 +156,8 @@ class IcebergInceptionV6(Module):
         )
 
         # input channels : 384
-        self.features = Sequential(
-            Inception_A(),
-            Inception_A(),
-            Inception_A(),
-            Inception_A(),
-            Reduction_A(),  # Mixed_6a
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Inception_B(),
-            Reduction_B(),  # Mixed_7a
-            Inception_C(),
-            Inception_C(),
-            Inception_C(),
-            AdaptiveAvgPool2d(1),
-            Flatten(),
-            ReLU(inplace=True)
-        )
+        self.features = get_features()
+        self.features.add_module(len(self.features), ReLU(inplace=True))
 
         # Linear layer
         self.classifier = Linear(1536, n_features)
@@ -216,17 +166,7 @@ class IcebergInceptionV6(Module):
         self._initialize_weights()
 
     def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, Conv2d):
-                kaiming_normal(m.weight)
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            elif isinstance(m, BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, Linear):
-                xavier_normal(m.weight)
-                m.bias.data.zero_()
+        initialize_weights(self.modules())
 
     def forward(self, x, a):
         x = self.stem(x)
@@ -237,3 +177,57 @@ class IcebergInceptionV6(Module):
         f = torch.cat((f1, a), dim=1)
         y = self.final_classifier(f)
         return y
+
+
+class IcebergInceptionWithAnglesAndStats(Module):
+
+    def __init__(self, input_n_channels, n_classes=2):
+        super(IcebergInceptionWithAnglesAndStats, self).__init__()
+
+        # Specific stem
+        self.stem = Sequential(
+            BasicConv2d(input_n_channels, 32, kernel_size=3, stride=1, padding=1),
+            BasicConv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            BasicConv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            BasicConv2d(64, 256, kernel_size=1, stride=1),
+            BasicConv2d(256, 256, kernel_size=3, stride=1),
+            BasicConv2d(256, 384, kernel_size=3, stride=2, padding=1),
+        )
+
+        # input channels : 384
+        self.features = get_features()
+        self.classifier = Linear(1536, 25)
+
+        self.metadata_features = Sequential(
+            Linear(7, 50),
+            ReLU(True),
+            Dropout(),
+            Linear(50, 25)
+        )
+
+        self.final_classifier = Sequential(
+            Linear(25 + 25, 50),
+            ReLU(True),
+            Dropout(),
+            Linear(50, n_classes)
+        )
+
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        initialize_weights(self.modules())
+
+    def forward(self, x, x_metadata):
+        # x_metadata = [inc_angle, b1_min, b1_mean, b1_max, b2_min, b2_mean, b2_max]
+
+        x = self.stem(x)
+        f0 = self.features(x)
+        f1 = self.classifier(f0)
+
+        f2 = self.metadata_features(x_metadata)
+        f = torch.cat((f1, f2), dim=1)
+
+        y = self.final_classifier(f)
+        return y
+
+

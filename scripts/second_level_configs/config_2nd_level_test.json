@@ -1,0 +1,56 @@
+{
+
+  "seed": 7777,
+  "batch_size": 32,
+  "num_workers": 12,
+
+  "test_aug": {
+    "Compose": {
+      "transforms": [
+        {"ToThreeBands": {}},
+        {"RandomAffine": {"translate": [0.1, 0.1],
+          "rotation": [-2, 2],
+          "interpolation": 0}},
+        {"RandomFlip": {"mode": "h", "proba": 0.5}},
+        {"RandomFlip": {"mode": "v", "proba": 0.5}},
+        {"_ToTensor": {}},
+        {"_Normalize": {}}
+      ]
+    }
+  },
+
+
+
+  "models": [
+    {
+      "name": {"IcebergInceptionV4": {"input_n_channels": 3, "n_classes": 1}},
+      "weights_path": "../output/training_IcebergInceptionV4_20171209_1133/fold_0"
+    },
+    {
+      "name": {"IcebergInceptionV4": {"input_n_channels": 3, "n_classes": 1}},
+      "weights_path": "../output/training_IcebergInceptionV4_20171209_1133/fold_1"
+    },
+    {
+      "name": {"IcebergInceptionV4": {"input_n_channels": 3, "n_classes": 1}},
+      "weights_path": "../output/training_IcebergInceptionV4_20171209_1133/fold_2"
+    },
+    {
+      "name": {"IcebergInceptionV4": {"input_n_channels": 3, "n_classes": 1}},
+      "weights_path": "../output/training_IcebergInceptionV4_20171209_1133/fold_3"
+    },
+    {
+      "name": {"IcebergInceptionV4": {"input_n_channels": 3, "n_classes": 1}},
+      "weights_path": "../output/training_IcebergInceptionV4_20171209_1133/fold_4"
+    }
+  ],
+
+  "to_proba_fn": "torch.nn.functional.sigmoid",
+
+  "TTA": {
+    "n_rounds": 7,
+    "merge_fn": "gmean"
+  }
+
+
+
+}

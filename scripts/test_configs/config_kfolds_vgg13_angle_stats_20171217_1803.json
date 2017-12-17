@@ -1,0 +1,57 @@
+{
+    "seed": 7777,
+    "batch_size": 32,
+    "num_workers": 12,
+
+    "test_aug": {
+        "Compose": {
+            "transforms": [
+                {"ToThreeBands": {}},
+                {"RandomAffine": {
+                    "translate": [0.05, 0.05],
+                    "rotation": [-15, 15],
+                    "interpolation": 2}},
+                {"RandomFlip": {"mode": "h", "proba": 0.5}},
+                {"RandomFlip": {"mode": "v", "proba": 0.5}},
+                {"_ToTensor": {}},
+                {"_Normalize": {}}
+            ]}
+    },
+
+    "get_test_batches_fn": "get_crop48_test_batches_with_metadata",
+
+    "models": [
+        {
+            "name": {"IcebergVGG13WithAnglesAndStats":
+            {"input_n_channels": 3, "input_size": [48, 48], "n_classes": 1}},
+            "weights_path": "../output/20171217_1706_training_config_vgg13_angle_stats_20171217_1803/fold_0"
+        },
+        {
+            "name": {"IcebergVGG13WithAnglesAndStats":
+            {"input_n_channels": 3, "input_size": [48, 48], "n_classes": 1}},
+            "weights_path": "../output/20171217_1706_training_config_vgg13_angle_stats_20171217_1803/fold_1"
+        },
+        {
+            "name": {"IcebergVGG13WithAnglesAndStats":
+            {"input_n_channels": 3, "input_size": [48, 48], "n_classes": 1}},
+            "weights_path": "../output/20171217_1706_training_config_vgg13_angle_stats_20171217_1803/fold_2"
+        },
+        {
+            "name": {"IcebergVGG13WithAnglesAndStats":
+            {"input_n_channels": 3, "input_size": [48, 48], "n_classes": 1}},
+            "weights_path": "../output/20171217_1706_training_config_vgg13_angle_stats_20171217_1803/fold_3"
+        },
+        {
+            "name": {"IcebergVGG13WithAnglesAndStats":
+            {"input_n_channels": 3, "input_size": [48, 48], "n_classes": 1}},
+            "weights_path": "../output/20171217_1706_training_config_vgg13_angle_stats_20171217_1803/fold_4"
+        }
+    ],
+
+    "to_proba_fn": "torch.nn.functional.sigmoid",
+
+    "TTA": {
+        "n_rounds": 7,
+        "merge_fn": "gmean"
+    }
+}
