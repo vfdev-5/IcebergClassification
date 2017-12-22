@@ -627,7 +627,7 @@ def get_test_batches(test_aug_str, batch_size, num_workers,
 def get_test_batches_single_class(test_aug_str, batch_size, num_workers,
                                   seed=None, limit_n_samples=None):
 
-    test_ds = IcebergDataset('Test', limit_n_samples=limit_n_samples)
+    test_ds = IcebergDataset('Test', normalized_inc_angle=True, limit_n_samples=limit_n_samples)
 
     test_aug = get_data_transforms(test_aug_str)
 

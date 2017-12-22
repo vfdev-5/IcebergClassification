@@ -19,6 +19,8 @@ def display_image(ax, img, id_num, band_id, inc_angle, target=None, **kwargs):
         for i in range(img.shape[2]):
             imgNb[:, i*img.shape[1]:(i+1)*img.shape[1]] = scale_percentile(img[:, :, i], q_min=0.0, q_max=100.0)
         img = imgNb
+    elif len(img.shape) == 3 and img.shape[2] == 3:
+        img = scale_percentile(img, q_min=0.0, q_max=100.0)
 
     im = ax.imshow(img, **kwargs)
     ax.text(10, 4, '%s %s %.5f' % (id_num, band_id, inc_angle), color='w', backgroundcolor='m', alpha=0.7)

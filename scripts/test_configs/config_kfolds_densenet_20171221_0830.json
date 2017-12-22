@@ -1,0 +1,53 @@
+{
+    "seed": 7777,
+    "batch_size": 32,
+    "num_workers": 12,
+
+    "test_aug": {
+        "Compose": {
+            "transforms": [
+                {"ToThreeBands": {}},
+                {"RandomAffine": {"translate": [0.1, 0.1],
+                    "rotation": [0, 0],
+                    "scale": [1.0, 1.35],
+                    "interpolation": 2}},
+                {"RandomFlip": {"mode": "h", "proba": 0.5}},
+                {"RandomFlip": {"mode": "v", "proba": 0.5}},
+                {"_ToTensor": {}},
+                {"_Normalize": {}}
+            ]
+        }
+    },
+
+    "get_test_batches_fn": "get_test_batches_single_class",
+
+    "models": [
+        {
+            "name": {"IcebergDenseNet161": { "input_n_channels": 3, "n_classes": 1}},
+            "weights_path": "../output/20171220_2349_training_config_densenet161_20171221_0040/fold_0"
+        },
+        {
+            "name": {"IcebergDenseNet161": { "input_n_channels": 3, "n_classes": 1}},
+            "weights_path": "../output/20171220_2349_training_config_densenet161_20171221_0040/fold_1"
+        },
+        {
+            "name": {"IcebergDenseNet161": { "input_n_channels": 3, "n_classes": 1}},
+            "weights_path": "../output/20171220_2349_training_config_densenet161_20171221_0040/fold_2"
+        },
+        {
+            "name": {"IcebergDenseNet161": { "input_n_channels": 3, "n_classes": 1}},
+            "weights_path": "../output/20171220_2349_training_config_densenet161_20171221_0040/fold_3"
+        },
+        {
+            "name": {"IcebergDenseNet161": { "input_n_channels": 3, "n_classes": 1}},
+            "weights_path": "../output/20171220_2349_training_config_densenet161_20171221_0040/fold_4"
+        }
+    ],
+
+    "to_proba_fn": "torch.nn.functional.sigmoid",
+
+    "TTA": {
+        "n_rounds": 5,
+        "merge_fn": "gmean"
+    }
+}

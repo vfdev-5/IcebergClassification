@@ -3,7 +3,7 @@ import math
 
 import torch
 from torch.nn import Module
-from torch.nn import Sequential, Linear, Conv2d, ReLU, BatchNorm2d, AdaptiveAvgPool2d
+from torch.nn import Sequential, Linear, Conv2d, ReLU, BatchNorm2d, AdaptiveAvgPool2d, MaxPool2d
 from torchvision.models.resnet import Bottleneck
 
 from . import Flatten
@@ -26,14 +26,11 @@ class IcebergResNet50(Module):
         self.inplanes = 64
 
         self.stem = Sequential(
-            Conv2d(input_n_channels, 64, kernel_size=3, stride=1, padding=1, bias=False),
+            Conv2d(input_n_channels, 64, kernel_size=7, stride=2, padding=3, bias=False),
             BatchNorm2d(64),
             ReLU(inplace=True),
-            Conv2d(64, 64, kernel_size=1, stride=2, bias=False),
-            BatchNorm2d(64),
-            ReLU(inplace=True),
+            MaxPool2d(kernel_size=3, stride=2, padding=1)
         )
-
         layers = [3, 4, 6, 3]
         block = Bottleneck
 
