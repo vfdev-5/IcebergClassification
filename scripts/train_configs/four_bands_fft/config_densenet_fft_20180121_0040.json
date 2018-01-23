@@ -1,0 +1,68 @@
+{
+  "seed": 12345,
+
+  "model": {"IcebergDenseNet161": {"input_n_channels": 2, "n_classes": 1}},
+
+  "criterion": {"BCEWithLogitsLoss": {}},
+  "get_trainval_batches_fn": "get_trainval_batches_single_class",
+  "to_proba_fn": "torch.nn.functional.sigmoid",
+
+  "n_epochs": 1000,
+  "validate_every_epoch": 4,
+
+  "fold_index": [0, 1, 2, 3, 4],
+  "n_splits": 5,
+
+  "batch_size": 32,
+  "num_workers": 12,
+
+  "lr_schedulers": [
+      {"CosineWithRestartLR": {"restart_every": 30, "restart_factor": 1.2, "min_lr": 1e-5, "verbose": "True"} }      
+  ],
+
+  "early_stopping": {"patience": 50, "mode": "min"},
+
+  "train_aug": {
+    "Compose": {
+      "transforms": [        
+        {"RandomApply": {"proba": 0.90,
+          "transforms": [
+            {"RandomAffine": {
+              "translate": [0.2, 0.2],
+              "rotation": [-50, 50],
+              "scale": [1.0, 1.3],
+              "interpolation": 2}},
+            {"RandomFlip": {"mode": "h", "proba": 0.75}},
+            {"RandomFlip": {"mode": "v", "proba": 0.75}}
+          ]}
+        },
+        {"ToFFT": {}},
+        {"NPQPercentileNormalize": {"q_min": 0.5, "q_max": 97.5}},
+        {"_ToTensor": {}}        
+      ]}
+  },
+
+  "test_aug": {
+    "Compose": {
+      "transforms": [        
+        {"RandomFlip": {"mode": "h", "proba": 0.5}},
+        {"RandomFlip": {"mode": "v", "proba": 0.5}},
+        {"ToFFT": {}},
+        {"NPQPercentileNormalize": {"q_min": 0.5, "q_max": 97.5}},
+        {"_ToTensor": {}}
+      ]}
+  },
+
+  "optimizer": {
+    "SGD": {
+      "params": [
+        {"params": {"model.features.parameters": {}}, "lr": 0.01},
+        {"params": {"model.classifier.parameters": {}}, "lr": 0.01}
+      ],
+      "momentum": 0.6,
+      "weight_decay": 0.001,
+      "nesterov": "True"
+    }
+  }
+
+}

@@ -16,12 +16,13 @@ from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
 from common import read_config, to_readable_str
 from common.dataflow import *
 from common.models import *
+from common.torch_common_utils.lr_schedulers import *
 from common.torch_common_utils.deserialization import restore_object, CustomObjectEval
 
 from common.torch_common_utils.training_utils import train_one_epoch, validate
 from common.torch_common_utils.training_utils import write_conf_log, write_csv_log, _write_log, \
     save_checkpoint, optimizer_to_str
-from common.torch_common_utils.training_utils import EarlyStopping
+from common.torch_common_utils.training_utils import EarlyStopping 
 from common.torch_common_utils.training_utils import accuracy
 from common.torch_common_utils.nn_utils import print_trainable_parameters
 
@@ -152,6 +153,12 @@ if __name__ == "__main__":
         criterion = criterion.cuda()
 
         params_to_insert = {'optimizer': '_opt'}
+        #custom_objects.add("_opt", optimizer)
+        # 
+        #   File "/usr/local/lib/python3.5/dist-packages/torch/optim/lr_scheduler.py", line 289, in _init_is_better
+        #    raise ValueError('mode ' + mode + ' is unknown!')
+        #   TypeError: Can't convert 'builtin_function_or_method' object to str implicitly
+        #
         custom_objects = {"_opt": optimizer}
         lr_schedulers_conf = config['lr_schedulers']
 
@@ -162,8 +169,9 @@ if __name__ == "__main__":
         for s in lr_schedulers_conf:
             scheduler = restore_object(s, params_to_insert=params_to_insert,
                                        custom_objects=custom_objects,
-                                       verbose_debug=False)
-            lr_schedulers.append(scheduler)
+                                       verbose_debug=False) 
+            assert not isinstance(scheduler, dict), "Failed to deserialize '{}'\n, result is {}".format(s, scheduler)
+            lr_schedulers.append(scheduler)        
 
         early_stopping = None
         if 'early_stopping' in config:

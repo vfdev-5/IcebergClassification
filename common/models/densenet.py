@@ -1,10 +1,10 @@
 
 
-from torchvision.models.densenet import OrderedDict, _DenseBlock, _Transition
+from torchvision.models.densenet import OrderedDict, _DenseBlock, _Transition, densenet121
 
 import torch
 from torch.nn import Module
-from torch.nn import Sequential, Conv2d, ReLU, MaxPool2d, BatchNorm2d, Linear
+from torch.nn import Sequential, Conv2d, ReLU, MaxPool2d, BatchNorm2d, Linear, Dropout
 from torch.nn import AdaptiveAvgPool2d
 from torch.nn.functional import relu
 from torch.nn.init import xavier_normal, kaiming_normal
@@ -286,4 +286,99 @@ class IcebergDenseNet161(Module):
     def forward(self, x, a):
         f = self.features(x)
         y = self.classifier(f)
+        return y
+
+
+def create_densenet_features(input_n_channels, num_init_features=64, growth_rate=32, block_config=(6, 12, 48, 32)):
+    bn_size = 4
+    drop_rate = 0
+    # First convolution
+    features = Sequential(
+        Conv2d(input_n_channels, num_init_features, kernel_size=3, stride=2, padding=1, bias=False),
+        BatchNorm2d(num_init_features),
+        ReLU(inplace=True),
+        MaxPool2d(kernel_size=3, stride=2, padding=1),
+    )
+    # Each denseblock
+    num_features = num_init_features
+    for i, num_layers in enumerate(block_config):
+        block = _DenseBlock(num_layers=num_layers, num_input_features=num_features,
+                            bn_size=bn_size, growth_rate=growth_rate, drop_rate=drop_rate)
+        features.add_module('denseblock%d' % (i + 1), block)
+        num_features = num_features + num_layers * growth_rate
+        if i != len(block_config) - 1:
+            trans = _Transition(num_input_features=num_features, num_output_features=num_features // 2)
+            features.add_module('transition%d' % (i + 1), trans)
+            num_features = num_features // 2
+
+    # Final batch norm
+    features.add_module('norm5', BatchNorm2d(num_features))
+    features.add_module('relu5', ReLU(inplace=True))
+    return features, num_features
+
+
+class MultiInputsDenseNet(Module):
+
+    def __init__(self, n_classes=1,
+                 num_init_features=64, growth_rate=32, block_config=(6, 12, 24, 16)):
+        super(MultiInputsDenseNet, self).__init__()
+
+        self.features1, _ = create_densenet_features(3, num_init_features, growth_rate, block_config)
+        self.features2, _ = create_densenet_features(1, num_init_features, growth_rate, block_config)
+        self.features3, num_features = create_densenet_features(2, num_init_features, growth_rate, block_config)
+
+        # Linear layer
+        self.classifier1 = Sequential(
+            AdaptiveAvgPool2d(1),
+            Flatten(),
+            Linear(num_features, num_features//2),
+            ReLU(True),
+            Dropout(0.5)
+        )
+        self.classifier2 = Sequential(
+            AdaptiveAvgPool2d(1),
+            Flatten(),
+            Linear(num_features, num_features//2),
+            ReLU(True),
+            Dropout(0.5)
+        )
+        self.classifier3 = Sequential(
+            AdaptiveAvgPool2d(1),
+            Flatten(),
+            Linear(num_features, num_features//2),
+            ReLU(True),
+            Dropout(0.5)
+        )
+        self.final_classifier = Sequential(
+            Linear(num_features//2 * 3, n_classes)
+        )
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, Conv2d):
+                kaiming_normal(m.weight)
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, Linear):
+                xavier_normal(m.weight)
+                m.bias.data.zero_()
+
+    def forward(self, xa1, xa2, xa3):
+        x1, _ = xa1
+        x2, _ = xa2
+        x3, _ = xa3
+        f1 = self.features1(x1)
+        f2 = self.features2(x2)
+        f3 = self.features3(x3)
+
+        f1 = self.classifier1(f1)
+        f2 = self.classifier2(f2)
+        f3 = self.classifier3(f3)
+
+        f = torch.cat((f1, f2, f3), dim=1)
+        y = self.final_classifier(f)
         return y

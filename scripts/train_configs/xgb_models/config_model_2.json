@@ -1,0 +1,21 @@
+{
+  "seed": 2017,
+
+  "dataset": "../output/processed_train.csv",
+
+  "features": [
+    "min_b1", "avg_b1", "max_b1", "avg_min_b1", "max_avg_b1",
+    "min_b2", "max_b2", "max_avg_b2", "max_min_b2",
+    "avg_min_b3", "max_avg_b3", "max_min_b3",
+    "max_b21",
+    "obj_min_b1", "obj_avg_b1",
+    "obj_min_b2", "obj_avg_b2",
+    "obj_avg_b21", "obj_max_b21"
+  ],
+
+  "n_folds": 5,
+  "num_boost_round": 35000,
+  "early_stopping_rounds": 500,
+  "n_runs": 100
+
+}

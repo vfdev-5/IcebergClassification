@@ -145,14 +145,15 @@ if __name__ == "__main__":
                 assert (data_ids == next_data_ids).all()
 
             y_probas = merge_fn_2(y_probas_acc, n_tta)
-            filename = os.path.join(output_path, "y_probas_%i_%s.npz" % (i, model_name))
-            save_y_probas(filename, data_ids, y_probas)
-            if need_write_submission:
-                filename = os.path.join(output_path, "y_probas_%i_%s.csv" % (i, model_name))
-                write_submission(filename, y_probas)
         else:
             y_probas = y_probas_acc
             data_ids = data_ids_tta[0]
+
+        filename = os.path.join(output_path, "y_probas_%i_%s.npz" % (i, model_name))
+        save_y_probas(filename, data_ids, y_probas)
+        if need_write_submission:
+            filename = os.path.join(output_path, "y_probas_%i_%s.csv" % (i, model_name))
+            write_submission(filename, y_probas)
 
         del y_probas, data_ids, y_probas_acc
         del model

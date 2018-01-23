@@ -10,11 +10,12 @@ from sklearn.model_selection import StratifiedKFold
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import SubsetRandomSampler
+from torchvision.transforms import Compose
 
 from .torch_common_utils.imgaug import RandomAffine, RandomChoice, RandomFlip, RandomCrop, RandomApply, CenterCrop
-from .torch_common_utils.dataflow import TransformedDataset, OnGPUDataLoader
+from .torch_common_utils.dataflow import TransformedDataset, OnGPUDataLoader, MultipleInputsDataset
 from .torch_common_utils.deserialization import restore_object
-from .imgproc_utils import smart_crop
+from .imgproc_utils import smart_crop, fft
 
 root_path = os.path.abspath("..")
 INPUT_PATH = os.path.abspath(os.path.join(root_path, 'input'))
@@ -27,7 +28,9 @@ SAMPLE_SUBMISSION_PATH = os.path.join(INPUT_PATH, 'sample_submission.csv')
 def preprocess(df):
     df['inc_angle'] = pd.to_numeric(df['inc_angle'], errors='coerce')
     # Simplest fix NaN
-    df.loc[df['inc_angle'].isnull(), 'inc_angle'] = 39.26
+    ll = df['inc_angle'].isnull().sum()
+    # df.loc[df['inc_angle'].isnull(), 'inc_angle'] = 39.26
+    df.loc[df['inc_angle'].isnull(), 'inc_angle'] = np.random.uniform(30.0, 46.0, size=ll)
     return df
 
 
@@ -51,8 +54,10 @@ def get_train_df(with_size_field=False):
         df = preprocess(df)
         if with_size_field:
             common_path = os.path.join(root_path, 'common')
-            assert os.path.exists(os.path.join(common_path, 'big_small_ships.npz')), "File 'big_small_ships.npz' is not found"
-            assert os.path.exists(os.path.join(common_path, 'big_small_icebergs.npz')), "File 'big_small_icebergs.npz' is not found"
+            assert os.path.exists(os.path.join(common_path, 'big_small_ships.npz')), \
+                "File 'big_small_ships.npz' is not found"
+            assert os.path.exists(os.path.join(common_path, 'big_small_icebergs.npz')), \
+                "File 'big_small_icebergs.npz' is not found"
             big_small_ships = np.load(os.path.join(common_path, 'big_small_ships.npz'))
             big_small_icebergs = np.load(os.path.join(common_path, 'big_small_icebergs.npz'))
             df.loc[big_small_ships['index'], "is_small"] = big_small_ships['y_classes']
@@ -62,18 +67,21 @@ def get_train_df(with_size_field=False):
     return df
 
 
-def get_test_df():
+def get_test_df(ignore_synth_data=False):
     global _TEST_DF
     if _TEST_DF is None:
         df = pd.read_json(TEST_JSON_PATH)
         df = preprocess(df)
         _TEST_DF = df
     df = _TEST_DF
+    if ignore_synth_data:
+        df.loc[:, 'generated'] = df['inc_angle'].apply(is_generated)
+        df = df[df['generated'] == False]
     return df
 
 
-def get_image(index, df):
-    b1, b2 = df.loc[index, ['band_1', 'band_2']]
+def get_image(index, df, bands=['band_1', 'band_2']):
+    b1, b2 = df.loc[index, bands]
     x = np.zeros((75 * 75, 2), dtype=np.float32)
     x[:, 0] = b1
     x[:, 1] = b2
@@ -157,6 +165,9 @@ class IcebergDataset(Dataset):
         if self.normalized_inc_angle:
             x[:, 0] = self.norm_b1(b1, a)
             x[:, 1] = self.norm_b2(b2, a)
+        else:
+            x[:, 0] = b1
+            x[:, 1] = b2            
         x = x.reshape((75, 75, 2))
         if self.smart_crop_size is not None:
             x = smart_crop(x, self.smart_crop_size)
@@ -181,11 +192,27 @@ class ToFiveBands(object):
         return x5b
 
 
+class ToFourBands(object):
+    def __call__(self, x):        
+        xa = np.expand_dims(x[:, :, 1] + x[:, :, 0], axis=-1)
+        x_linear = np.expand_dims(np.power(20, 0.1 * x[:, :, 0]) * np.power(20, 0.1 * x[:, :, 1]), axis=-1)
+        x4b = np.concatenate((x, xa, x_linear), axis=-1)
+        return x4b
+
+
 class ToThreeBands(object):
     def __call__(self, x):
         xa = np.expand_dims(x[:, :, 1] + x[:, :, 0], axis=-1)
         x3b = np.concatenate((x, xa), axis=-1)
         return x3b
+
+
+class ToFFT(object):
+    def __call__(self, x):
+        x_fft = np.zeros(x.shape[:2] + (2,), dtype=np.float32)
+        x_fft[:, :, 0] = fft(x[:, :, 0])
+        x_fft[:, :, 1] = fft(x[:, :, 1])
+        return x_fft
 
 
 class _Normalize(object):
@@ -196,6 +223,23 @@ class _Normalize(object):
             maxv = torch.max(x[i, :, :])
             x[i, :, :].add_(-meanv)
             x[i, :, :].mul_(1.0 / (maxv - minv))
+        return x
+
+
+class NPQPercentileNormalize(object):
+
+    def __init__(self, q_min, q_max):
+        self.q_min = q_min
+        self.q_max = q_max
+
+    def __call__(self, x):        
+        for i in range(x.shape[2]):
+            b = x[:, :, i]
+            t1 = np.percentile(b, q=self.q_min)
+            t2 = np.percentile(b, q=self.q_max)
+            b[b < t1] = t1
+            b[b > t2] = t2
+            x[:, :, i] = (b - t1) / (t2 - t1 + 1e-10)
         return x
 
 
@@ -210,6 +254,9 @@ CUSTOM_TRANSFORMS = {
     "_Normalize": _Normalize,
     "ToFiveBands": ToFiveBands,
     "ToThreeBands": ToThreeBands,
+    "ToFourBands": ToFourBands,
+    "ToFFT": ToFFT,
+    "NPQPercentileNormalize": NPQPercentileNormalize
 }
 
 
@@ -252,8 +299,14 @@ def to_tensor(y):
     return torch.Tensor([y])
 
 
-def get_trainval_batches(train_aug_str, test_aug_str, fold_index, n_splits, batch_size, num_workers,
-                         seed=None, limit_n_samples=None):
+def get_trainval_batches(train_aug_str,
+                         test_aug_str,
+                         fold_index,
+                         n_splits,
+                         batch_size,
+                         num_workers,
+                         seed=None,
+                         limit_n_samples=None):
 
     trainval_ds = IcebergDataset('Train', limit_n_samples=limit_n_samples)
 
@@ -302,11 +355,21 @@ def get_trainval_batches(train_aug_str, test_aug_str, fold_index, n_splits, batc
     return train_batches, val_batches
 
 
-def get_trainval_batches_single_class(train_aug_str, test_aug_str, fold_index, n_splits, batch_size, num_workers,
-                                      seed=None, limit_n_samples=None):
+def _get_trainval_batches_single_class(train_aug_str,
+                                       test_aug_str,
+                                       fold_index,
+                                       n_splits,
+                                       batch_size,
+                                       num_workers,
+                                       normalized_inc_angle,
+                                       simple_stratification,
+                                       smart_crop_size,
+                                       seed=None,
+                                       limit_n_samples=None):
 
     trainval_ds = IcebergDataset('Train',
-                                 normalized_inc_angle=True,
+                                 normalized_inc_angle=normalized_inc_angle,
+                                 smart_crop_size=smart_crop_size,
                                  limit_n_samples=limit_n_samples)
 
     train_aug = get_data_transforms(train_aug_str)
@@ -320,20 +383,28 @@ def get_trainval_batches_single_class(train_aug_str, test_aug_str, fold_index, n
                                     x_transforms=partial(x_transform, aug_fn=val_aug),
                                     y_transforms=to_tensor)
 
-    # Integrate size to Kfold stratified split
-    _trainval_ds = IcebergDataset('Train', limit_n_samples=limit_n_samples, return_object_size_hint=True)
-    x_array = []
-    y_array = []
-    new_classes = {
-        (0, 0): 0,
-        (0, 1): 1,
-        (1, 0): 2,
-        (1, 1): 3,
-    }
-    for i, ((_, _, is_small), y) in enumerate(_trainval_ds):
-        x_array.append(i)
-        y = (int(y), int(is_small))
-        y_array.append(new_classes[y])
+
+    if simple_stratification:
+        x_array = []
+        y_array = []
+        for i, ((_, _), y) in enumerate(trainval_ds):
+            x_array.append(i)
+            y_array.append(y)
+    else:
+        # Integrate size to Kfold stratified split
+        _trainval_ds = IcebergDataset('Train', limit_n_samples=limit_n_samples, return_object_size_hint=True)
+        x_array = []
+        y_array = []
+        new_classes = {
+            (0, 0): 0,
+            (0, 1): 1,
+            (1, 0): 2,
+            (1, 1): 3,
+        }
+        for i, ((_, _, is_small), y) in enumerate(_trainval_ds):
+            x_array.append(i)
+            y = (int(y), int(is_small))
+            y_array.append(new_classes[y])
 
     # Stratified split:
     train_indices = None
@@ -361,70 +432,52 @@ def get_trainval_batches_single_class(train_aug_str, test_aug_str, fold_index, n
                                   pin_memory=True)
 
     return train_batches, val_batches
+
+
+
+def get_trainval_batches_single_class(train_aug_str, test_aug_str, fold_index, n_splits, batch_size, num_workers,
+                                      seed=None, limit_n_samples=None):
+    return _get_trainval_batches_single_class(train_aug_str,
+                                              test_aug_str,
+                                              fold_index,
+                                              n_splits,
+                                              batch_size,
+                                              num_workers,
+                                              normalized_inc_angle=True,
+                                              simple_stratification=False,
+                                              smart_crop_size=None,
+                                              seed=seed,
+                                              limit_n_samples=limit_n_samples)
+
+
+def get_trainval_batches_nonnorm_inc_angle_single_class(train_aug_str, test_aug_str, fold_index, n_splits, batch_size, num_workers,
+                                                        seed=None, limit_n_samples=None):
+    return _get_trainval_batches_single_class(train_aug_str,
+                                              test_aug_str,
+                                              fold_index,
+                                              n_splits,
+                                              batch_size,
+                                              num_workers,
+                                              normalized_inc_angle=False,
+                                              simple_stratification=False,
+                                              smart_crop_size=None,
+                                              seed=seed,
+                                              limit_n_samples=limit_n_samples)
 
 
 def get_cropped_trainval_batches(train_aug_str, test_aug_str, fold_index, n_splits, batch_size, num_workers,
                                  seed=None, limit_n_samples=None):
-
-    trainval_ds = IcebergDataset('Train',
-                                 limit_n_samples=limit_n_samples,
-                                 normalized_inc_angle=True,
-                                 smart_crop_size=48)
-
-    train_aug = get_data_transforms(train_aug_str)
-    val_aug = get_data_transforms(test_aug_str)
-
-    train_aug_ds = TransformedDataset(trainval_ds,
-                                      x_transforms=partial(x_transform, aug_fn=train_aug),
-                                      y_transforms=to_tensor)
-
-    val_aug_ds = TransformedDataset(trainval_ds,
-                                    x_transforms=partial(x_transform, aug_fn=val_aug),
-                                    y_transforms=to_tensor)
-
-    # Integrate size to Kfold stratified split
-    _trainval_ds = IcebergDataset('Train',
-                                  limit_n_samples=limit_n_samples,
-                                  return_object_size_hint=True)
-    x_array = []
-    y_array = []
-    new_classes = {
-        (0, 0): 0,
-        (0, 1): 1,
-        (1, 0): 2,
-        (1, 1): 3,
-    }
-    for i, ((_, _, is_small), y) in enumerate(_trainval_ds):
-        x_array.append(i)
-        y = (int(y), int(is_small))
-        y_array.append(new_classes[y])
-
-    # Stratified split:
-    train_indices = None
-    val_indices = None
-    skf = StratifiedKFold(n_splits=n_splits, random_state=seed)
-    for i, (train_indices, val_indices) in enumerate(skf.split(x_array, y_array)):
-        if i == fold_index:
-            break
-
-    train_sampler = SubsetRandomSampler(train_indices)
-    val_sampler = SubsetRandomSampler(val_indices)
-
-    train_batches = OnGPUDataLoader(train_aug_ds,
-                                    batch_size=batch_size,
-                                    sampler=train_sampler,
-                                    num_workers=num_workers,
-                                    drop_last=True,
-                                    pin_memory=True)
-
-    val_batches = OnGPUDataLoader(val_aug_ds,
-                                  batch_size=batch_size,
-                                  sampler=val_sampler,
-                                  num_workers=num_workers,
-                                  drop_last=True,
-                                  pin_memory=True)
-
-    return train_batches, val_batches
+    return _get_trainval_batches_single_class(train_aug_str,
+                                              test_aug_str,
+                                              fold_index,
+                                              n_splits,
+                                              batch_size,
+                                              num_workers,
+                                              normalized_inc_angle=True,
+                                              simple_stratification=False,
+                                              smart_crop_size=48,
+                                              seed=seed,
+                                              limit_n_samples=limit_n_samples)
 
 
 def get_trainval_batches_with_metadata(train_aug_str, test_aug_str, fold_index, n_splits, batch_size, num_workers,
@@ -685,3 +738,145 @@ def get_crop48_test_batches_with_metadata(test_aug_str, batch_size, num_workers,
                                    drop_last=False,
                                    pin_memory=True)
     return test_batches
+
+
+def x_to_linear(x):
+    x, a = x    
+    x_linear = np.power(20, 0.1 * x[:, :, 0]) * np.power(20, 0.1 * x[:, :, 1])
+    x_linear = np.expand_dims(x_linear, axis=-1)
+    return x_linear, a
+
+
+def x_to_fft(x):
+    x, a = x
+    x_fft = np.zeros(x.shape[:2] + (2,), dtype=np.float32)
+    x_fft[:, :, 0] = fft(x[:, :, 0])
+    x_fft[:, :, 1] = fft(x[:, :, 1])
+    return x_fft, a
+
+
+def x_range_normalize(x, q_min, q_max):
+    x, a = x
+    new_x = x.copy()
+    for i in range(x.shape[2]):
+        b = new_x[:, :, i]
+        t1 = np.percentile(b, q=q_min)
+        t2 = np.percentile(b, q=q_max)
+        b[b < t1] = t1
+        b[b > t2] = t2
+        new_x[:, :, i] = (b - t1) / (t2 - t1 + 1e-10)
+    return new_x, a
+
+
+def x_transpose(x):
+    x, a = x
+    return x.transpose([2, 0, 1]), a
+
+
+def get_trainval_multiinput_batches(train_aug_str,
+                                    test_aug_str,
+                                    fold_index,
+                                    n_splits,
+                                    batch_size,
+                                    num_workers,
+                                    seed=None,
+                                    limit_n_samples=None):
+    """
+        2 input normalized bands ->            
+            [
+                batches: b1, b2, b1+b2
+                batches: np.power(20, 0.1 * b1) * np.power(20, 0.1 * b2)
+                batches: fft(b1), fft(b2)
+            ]
+    """
+
+    trainval_ds = IcebergDataset('Train',
+                                 normalized_inc_angle=True,
+                                 smart_crop_size=None,
+                                 limit_n_samples=limit_n_samples)
+
+
+    train_aug = get_data_transforms(train_aug_str)
+    val_aug = get_data_transforms(test_aug_str)
+
+    train_aug_ds1 = TransformedDataset(trainval_ds,
+                                       x_transforms=partial(x_transform, aug_fn=train_aug),
+                                       y_transforms=to_tensor)
+
+    val_aug_ds1 = TransformedDataset(trainval_ds,
+                                     x_transforms=partial(x_transform, aug_fn=val_aug),
+                                     y_transforms=to_tensor)
+    # Elements of train_aug_ds1, val_aug_ds1 should be still numpy arrays:
+    # train_aug_ds1[0] = ( (x, a), y )
+    assert isinstance(train_aug_ds1[0][0][0], np.ndarray) and isinstance(val_aug_ds1[0][0][0], np.ndarray), \
+        "type(train_aug_ds1[0][0][0]): {} and type(val_aug_ds1[0][0][0]): {}" \
+            .format(type(train_aug_ds1[0][0][0]), type(val_aug_ds1[0][0][0]))
+
+    train_aug_ds2 = TransformedDataset(train_aug_ds1, 
+                                       x_transforms=Compose([x_to_linear, 
+                                                             partial(x_range_normalize, q_min=0.5, q_max=99.5),
+                                                             x_transpose]))
+    val_aug_ds2 = TransformedDataset(val_aug_ds1, 
+                                     x_transforms=Compose([x_to_linear, 
+                                                           partial(x_range_normalize, q_min=0.5, q_max=99.5),
+                                                           x_transpose]))
+
+    train_aug_ds3 = TransformedDataset(train_aug_ds1, 
+                                        x_transforms=Compose([x_to_fft, 
+                                                              partial(x_range_normalize, q_min=2.5, q_max=97.5),
+                                                              x_transpose]))
+    val_aug_ds3 = TransformedDataset(val_aug_ds1, 
+                                      x_transforms=Compose([x_to_fft, 
+                                                            partial(x_range_normalize, q_min=2.5, q_max=97.5),
+                                                            x_transpose]))
+
+    train_aug_ds1 = TransformedDataset(train_aug_ds1, x_transforms=x_transpose)
+    val_aug_ds1 = TransformedDataset(val_aug_ds1, x_transforms=x_transpose)
+
+    train_aug_mds = MultipleInputsDataset([train_aug_ds1, train_aug_ds2, train_aug_ds3], 
+                                          target_reduce_fn=lambda targets: targets[0])
+
+    val_aug_mds = MultipleInputsDataset([val_aug_ds1, val_aug_ds2, val_aug_ds3], 
+                                        target_reduce_fn=lambda targets: targets[0])
+
+    # Integrate size to Kfold stratified split
+    _trainval_ds = IcebergDataset('Train', limit_n_samples=limit_n_samples, return_object_size_hint=True)
+    x_array = []
+    y_array = []
+    new_classes = {
+        (0, 0): 0,
+        (0, 1): 1,
+        (1, 0): 2,
+        (1, 1): 3,
+    }
+    for i, ((_, _, is_small), y) in enumerate(_trainval_ds):
+        x_array.append(i)
+        y = (int(y), int(is_small))
+        y_array.append(new_classes[y])
+
+    # Stratified split:
+    train_indices = None
+    val_indices = None
+    skf = StratifiedKFold(n_splits=n_splits, random_state=seed)
+    for i, (train_indices, val_indices) in enumerate(skf.split(x_array, y_array)):
+        if i == fold_index:
+            break
+
+    train_sampler = SubsetRandomSampler(train_indices)
+    val_sampler = SubsetRandomSampler(val_indices)
+
+    train_batches = OnGPUDataLoader(train_aug_mds,
+                                    batch_size=batch_size,
+                                    sampler=train_sampler,
+                                    num_workers=num_workers,
+                                    drop_last=True,
+                                    pin_memory=True)
+
+    val_batches = OnGPUDataLoader(val_aug_mds,
+                                  batch_size=batch_size,
+                                  sampler=val_sampler,
+                                  num_workers=num_workers,
+                                  drop_last=True,
+                                  pin_memory=True)                                  
+
+    return train_batches, val_batches

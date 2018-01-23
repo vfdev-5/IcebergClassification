@@ -4,7 +4,7 @@
   "model": {"IcebergDenseNet161": { "input_n_channels": 3, "n_classes": 1}},
 
   "criterion": {"BCEWithLogitsLoss": {}},
-  "get_trainval_batches_fn": "get_trainval_batches_single_class",
+  "get_trainval_batches_fn": "get_trainval_batches_nonnorm_inc_angle_single_class",
   "to_proba_fn": "sigmoid",
 
   "n_epochs": 1000,

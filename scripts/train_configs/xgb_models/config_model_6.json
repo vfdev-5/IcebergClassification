@@ -1,0 +1,29 @@
+{
+  "seed": 2017,
+
+  "dataset": "../output/processed_train.csv",
+
+  "features": [
+    "inc_angle", "avg_b1", "max_b1", "avg_b2", "max_b2",
+    "avg_min_b3", "max_avg_b3", "max_min_b3",
+    "max_b21",
+    "obj_f1", "obj_size", "obj_area",
+    "obj_cnvx_def_min", "obj_cnvx_def_mean","obj_cnvx_def_max", "obj_n_cnvx_def",
+    "obj_m2", "obj_m3"
+  ],
+
+  "n_folds": 5,
+  "num_boost_round": 35000,
+  "early_stopping_rounds": 1000,
+  "n_runs": 100,
+
+  "hyper_params": {
+    "eta": [0.005, 0.00005],
+    "max_depth": [2, 5],
+    "subsample": [0.4, 0.98],
+    "colsample_bytree": [0.4, 0.98]
+  }
+
+
+
+}

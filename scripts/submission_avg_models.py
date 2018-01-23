@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Write submission as average proba of multiple models predictions")
     parser.add_argument('path', metavar='<path>', help="Path to npz files with predictions")
-    parser.add_argument('--proba_thresholds', type=int, nargs=2, help="Probability min/max thresholds, e.g 0.03 0.97")
+    parser.add_argument('--proba_thresholds', type=float, nargs=2, help="Probability min/max thresholds, e.g 0.03 0.97")
     parser.add_argument('--gmean', action='store_true', help='Apply gmean instead of mean')
     args = parser.parse_args()
     output_path = args.path

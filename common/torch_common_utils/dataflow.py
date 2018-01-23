@@ -20,6 +20,47 @@ class ProxyDataset(Dataset):
         return len(self.ds)
 
 
+class MultipleInputsDataset(Dataset):
+    """
+    Structure to wrap input list of datasets as a single dataset.
+    Usage:
+    ```
+        mds = MultipleInputsDataset([ds1, ds2, ds3])
+        # mds[i] == [ds1[i][0], ds2[i][0], ds3[i][0]], target_fn([ds1[i][1], ds2[i][1], ds3[i][1]])
+        # len(mds) == len(ds1)
+        # len(mds) == len(ds2)
+        # len(mds) == len(ds3)
+    ```
+
+    """
+
+    def __init__(self, ds_list, target_reduce_fn=None):
+        """
+        :param ds_list: list of datasets
+        :param target_reduce_fn: (optional) function to transform targets. If None, list of all targets is returned
+            ```
+            target_reduce_fn([ds1[i][1], ds2[i][1], ds3[i][1]]) = [ds1[i][1], ds2[i][1], ds3[i][1]]
+            ```
+        """
+        assert isinstance(ds_list, (list, tuple))
+        # Check that all datasets
+        ll = len(ds_list[0])
+        assert isinstance(ds_list[0], Dataset)
+        for ds in ds_list[1:]:
+            assert isinstance(ds, Dataset)
+            assert len(ds) == ll
+        self.ds_list = ds_list
+        self.target_reduce_fn = target_reduce_fn if target_reduce_fn is not None else lambda x: x
+
+    def __len__(self):
+        return len(self.ds_list[0])
+
+    def __getitem__(self, index):
+        x = [ds[index][0] for ds in self.ds_list]
+        y = self.target_reduce_fn([ds[index][1] for ds in self.ds_list])
+        return x, y
+
+
 class ResizedDataset(ProxyDataset):
 
     def __init__(self, ds, output_size, interpolation=cv2.INTER_CUBIC, resize_target=False):

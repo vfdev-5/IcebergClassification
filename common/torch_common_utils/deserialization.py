@@ -17,12 +17,17 @@ class CustomObjectEval:
     def __contains__(self, item_str):
         if not isinstance(item_str, str):
             return False
+        if item_str in self._objects:
+            return True
         try:
             obj = eval(item_str, self._globals)
             self._objects[item_str] = obj
         except NameError:
             return False
         return True
+
+    def add(self, key, value):
+        self._objects[key] = value
 
     def __getitem__(self, item_str):
         if not isinstance(item_str, str):
@@ -38,22 +43,9 @@ def restore_object(serialized_obj, custom_objects=None, params_to_insert=None, v
     ```
     model = MySuperNet()
     # model has attributes : features, classifier
+    # CustomObjectEval allows to evaluate "model.features.parameters" to <object model.features.parameters>
     custom_objects = CustomObjectEval(globals=globals())
 
-    optimizer_json_str = '''{"Adam": {
-                                "params": [{
-                                    "params": {"model.features.parameters": {}},
-                                    "lr": 0.0001
-                                }, {"params": {"model.classifier.parameters": {}},
-                                    "lr": 0.001
-                                }],
-                                "betas": [0.9, 0.0],
-                                "eps": 1.0}
-                            }'''
-    optimizer = restore_optimizer(optimizer_json_str, custom_objects=custom_objects)
-    ```
-    Same if optimizer is defined as dict:
-    ```
     optimizer_dict = {"Adam": {"params": [{
                                     "params": {"model.features.parameters": {}},
                                     "lr": 0.0001
@@ -64,14 +56,13 @@ def restore_object(serialized_obj, custom_objects=None, params_to_insert=None, v
                                 "eps": 1.0}}
     optimizer = restore_optimizer(optimizer_dict, custom_objects=custom_objects)
     ```
-
     Example: Restore lr scheduler
     ```
-    lr_scheduler_str = '''{
+    lr_scheduler_dict = {
         "ExponentialLR": { "gamma": 0.77 }
     }
-    '''
-    # lr_scheduler_str is missing optimizer argument (this is intended as we can not know
+    
+    # lr_scheduler_dict is missing optimizer argument (this is intended as we can not know
     # in advance name of optimizer instance)
     # We insert in a posteriori
     params_to_insert = {
@@ -84,7 +75,7 @@ def restore_object(serialized_obj, custom_objects=None, params_to_insert=None, v
 
     ```
 
-    :param serialized_obj: str or dict
+    :param serialized_obj: dict
     :param custom_objects: dict or instance of CustomObjectEval
     :param verbose_debug:
     :return:
@@ -126,7 +117,7 @@ def object_hook(decoded_dict, custom_objects=None, verbose_debug=False):
             # replace argument's value by object if found in custom_objects
             for k, v in decoded_dict.items():
                 if verbose_debug:
-                    print("-- k, v: ", k, v)
+                    print("-- k, v: ", k, v, type(v))
                 if isinstance(v, str) and v in custom_objects:
                     decoded_dict[k] = custom_objects[v]
             if verbose_debug:
